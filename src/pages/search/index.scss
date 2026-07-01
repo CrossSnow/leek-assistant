@@ -1,0 +1,109 @@
+page {
+  background-color: #f5f7fa;
+}
+.page-search {
+  padding: 32rpx;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+// 顶部搜索框区域
+.search-header {
+  display: flex;
+  gap: 24rpx;
+  align-items: center;
+  margin-bottom: 40rpx;
+  .search-input {
+    flex: 1;
+    height: 88rpx;
+    padding: 0 30rpx;
+    background: #fff;
+    border-radius: 16rpx;
+    font-size: 30rpx;
+    box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
+  }
+  .search-btn {
+    width: 140rpx;
+    height: 88rpx;
+    line-height: 88rpx;
+    border-radius: 16rpx;
+    font-size: 30rpx;
+  }
+}
+
+// 结果滚动容器
+.result-scroll {
+  .empty-tip {
+    text-align: center;
+    margin-top: 200rpx;
+    font-size: 28rpx;
+    color: #999;
+  }
+  // 单条基金条目
+  .stock-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 36rpx 30rpx;
+    background: #ffffff;
+    border-radius: 20rpx;
+    margin-bottom: 24rpx;
+    box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+    .stock-info {
+      display: flex;
+      flex-direction: column;
+      gap: 10rpx;
+      .stock-name {
+        font-size: 32rpx;
+        color: #111;
+        font-weight: 500;
+      }
+      .stock-code {
+        font-size: 26rpx;
+        color: #888;
+      }
+    }
+  }
+}
+
+// 弹窗遮罩与盒子
+.modal-mask {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.modal-box {
+  width: 82%;
+  background: #fff;
+  border-radius: 24rpx;
+  padding: 48rpx 36rpx;
+  .modal-title {
+    display: block;
+    text-align: center;
+    font-size: 34rpx;
+    color: #222;
+    margin-bottom: 40rpx;
+  }
+  .share-input {
+    width: 100%;
+    height: 80rpx;
+    padding: 0 24rpx;
+    border: 1rpx solid #e5e7eb;
+    border-radius: 14rpx;
+    font-size: 30rpx;
+    margin-bottom: 40rpx;
+    box-sizing: border-box;
+  }
+  .modal-buttons {
+    display: flex;
+    gap: 30rpx;
+    justify-content: center;
+  }
+}
