@@ -1,8 +1,9 @@
-// 本地存储的自选股票基础信息（新增 holdShare 持仓份额）
+// 本地存储的自选股票基础信息
 export interface StockItem {
   code: string; // 基金代码
   name: string; // 基金名称
-  holdShare: number; // 持有份额（新增）
+  tag?: string; // ESG标签
+  holdShare: number; //持仓份额
 }
 
 // 接口返回的实时行情+预测收益数据
