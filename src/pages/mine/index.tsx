@@ -1,4 +1,4 @@
-import { View, Button } from '@tarojs/components';
+import { View, Button, Text } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { clearAllCollect } from '../../utils/storage';
 import './index.scss';

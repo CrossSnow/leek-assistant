@@ -22,12 +22,12 @@
 // 空白页面
 .empty {
   margin-top: 160rpx;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32rpx;
   color: #999;
   font-size: 26rpx;
-  .empty-btn {
-    margin-top: 32rpx;
-  }
 }
 
 // 持仓卡片核心样式（界限清晰：边框+轻微阴影）
@@ -40,6 +40,26 @@
   width: 100%;
   box-sizing: border-box;
   box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+  // 新增：角标定位基准
+  position: relative;
+  overflow: visible;
+}
+
+// ========== 新增：右上角类型角标 ==========
+.card-badge {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  padding: 4rpx 14rpx;
+  font-size: 22rpx;
+  color: #ffffff;
+  border-top-left-radius: 12rpx;
+}
+.badge-fund {
+  background-color: #38a169;
+}
+.badge-stock {
+  background-color: #ecc94b;
 }
 
 // 卡片头部：名称+涨跌幅
@@ -96,6 +116,14 @@
 .predict-desc {
   font-size: 24rpx;
   color: #666;
+  margin-bottom: 6rpx;
+}
+
+// ========== 新增：估值更新时间样式 ==========
+.update-time {
+  font-size: 22rpx;
+  color: #999;
+  display: block;
 }
 
 // 行情异常提示
@@ -194,5 +222,62 @@
     font-size: 28rpx;
     padding: 0 30rpx;
     height: 84rpx;
+  }
+}
+
+// 筛选栏外层容器：筛选按钮 + 刷新按钮左右分布
+.filter-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+  gap: 20rpx;
+}
+.filter-tab {
+  display: flex;
+  gap: 20rpx;
+  flex: 1;
+  .filter-btn {
+    padding: 0 24rpx;
+    height: 64rpx;
+    line-height: 64rpx;
+    border-radius: 12rpx;
+    font-size: 26rpx;
+    margin: 0 !important;
+    background: #fff;
+    color: #666;
+    &.active {
+      background: #3182ce;
+      color: #ffffff;
+    }
+  }
+}
+.refresh-btn {
+  height: 64rpx;
+  line-height: 64rpx;
+  border-radius: 12rpx;
+  font-size: 26rpx;
+  margin: 0 !important;
+  padding: 0 20rpx;
+}
+
+// 提示行左右布局
+.tip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24rpx;
+  .tip-text {
+    color: #888;
+    font-size: 24rpx;
+  }
+  .total-profit {
+    font-size: 26rpx;
+    &.rise {
+      color: #e53e3e;
+    }
+    &.fall {
+      color: #38a169;
+    }
   }
 }

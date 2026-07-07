@@ -30,6 +30,8 @@ export const getFundDailyInfo = async (code: string, holdShare: number): Promise
     // 当日预测盈亏 = 份额 * (实时估值 - 昨日净值)
     const todayPredictProfit = holdShare * (nowNet - lastNet);
     const predictDesc = risePercent >= 0 ? "短期看涨" : "短期承压看跌";
+    // 提取估值更新时间 gztime
+    const updateTime = data.gztime || '';
 
     return {
       code: data.fundcode,
@@ -39,11 +41,12 @@ export const getFundDailyInfo = async (code: string, holdShare: number): Promise
       risePercent: risePercent,
       todayPredictProfit,
       predictDesc,
+      updateTime, // 新增估值更新时间
       loadError: false // 请求成功标记
     };
   } catch (err) {
     console.error('基金行情请求失败：', err);
-    // 异常返回完整结构，带上错误标记
+    // 异常返回完整结构，带上错误标记，updateTime兜底空字符串
     return {
       code,
       name: "未知基金",
@@ -52,6 +55,7 @@ export const getFundDailyInfo = async (code: string, holdShare: number): Promise
       risePercent: 0,
       todayPredictProfit: 0,
       predictDesc: "暂无估值数据，下拉刷新重试",
+      updateTime: '', // 异常兜底空
       loadError: true // 页面识别异常卡片
     };
   }
@@ -59,46 +63,65 @@ export const getFundDailyInfo = async (code: string, holdShare: number): Promise
 
 
 /**
- * 基金模糊搜索（新浪基金搜索接口）
- * @param keyword 基金代码/名称关键词
+ * 搜索：股票 + 公募基金 混合搜索
+ * @param keyword 代码/名称
  */
 export const searchStock = async (keyword: string): Promise<StockItem[]> => {
   try {
     const trimKey = keyword.trim();
     if (!trimKey) return [];
     const encodeKey = encodeURIComponent(trimKey);
-    const res = await Taro.request({
-      url: `http://suggest3.sinajs.cn/suggest/type=11&key=${encodeKey}`,
-      method: 'GET',
-      timeout: 5000
-    });
-    const text = res.data as string;
     const list: StockItem[] = [];
 
-    // 1. 按分号分割每条股票记录，过滤空末尾项
-    const recordArr = text.split(';').filter(item => item.trim());
+    // 1. 请求东方财富基金搜索接口
+    const fundRes = await Taro.request({
+      url: `http://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeKey}`,
+      method: 'GET',
+      timeout: 4000
+    });
+    const resData = fundRes.data;
+    // 判断接口正常且有基金列表
+    if (resData.ErrCode === 0 && Array.isArray(resData.Datas)) {
+      resData.Datas.forEach((item: any) => {
+        const code = item.CODE || '';
+        const name = item.NAME || '';
+        const tag = item.CATEGORYDESC || '基金';
+        if (!code || !name) return;
+        list.push({
+          code,
+          name,
+          tag,
+          holdShare: 0,
+        });
+      });
+    }
 
+    // 2. 原有新浪股票搜索（保留，兼容股票）
+    const stockRes = await Taro.request({
+      url: `http://suggest3.sinajs.cn/suggest/type=11&key=${encodeKey}`,
+      method: 'GET',
+      timeout: 4000
+    });
+    const text = stockRes.data as string;
+    const recordArr = text.split(';').filter(item => item.trim());
     for (const record of recordArr) {
-      // 逗号拆分所有字段
       const fields = record.split(',');
-      // 字段下标对应：
-      // 0:sz001248 1:11 2:纯数字代码 3:sz001248 4:股票名称 9:ESG标签
+      console.log(fields[9])
+      console.log(fields);
       const code = fields[2] || '';
       const name = fields[4] || '';
-      const tag = fields[9] || '';
-
+      const tag = '股票';
       if (!code || !name) continue;
-
-      list.push({
-        code,
-        name,
-        tag: tag || undefined,
-        holdShare: 0,
-      });
+      // 去重：基金已存在则不重复添加
+      const isExist = list.some(i => i.code === code);
+      if (!isExist) {
+        list.push({ code, name, tag, holdShare: 0 });
+      }
     }
 
     return list;
   } catch (err) {
+    console.error('搜索异常：', err);
     Taro.showToast({ title: '搜索超时，网络不佳', icon: 'none' });
     return [];
   }
