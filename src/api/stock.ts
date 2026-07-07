@@ -1,17 +1,23 @@
 import Taro from '@tarojs/taro';
 import { StockDailyData, StockItem } from '../types/stock';
 
+// 通用工具：ArrayBuffer(GBK编码) 转为 UTF-8 中文字符串
+const gbkBufferToUtf8 = (buffer: ArrayBuffer): string => {
+  const uint8Arr = new Uint8Array(buffer);
+  return new TextDecoder('gbk').decode(uint8Arr);
+};
+
 /**
- * 获取单只基金实时净值、涨跌幅，根据持仓份额计算真实预测盈亏
- * @param code 基金6位代码
+ * 获取单只基金/股票实时行情，计算当日预测盈亏
+ * @param code 标的代码
  * @param holdShare 用户持有份额
- * 接口返回示例：jsonpgz({"fundcode":"010595","name":"广发成长精选混合A","jzrq":"2026-06-30","dwjz":"0.7134","gsz":"0.7214","gszzl":"1.13","gztime":"2026-07-01 15:00"});
  */
 export const getFundDailyInfo = async (code: string, holdShare: number): Promise<StockDailyData & { loadError: boolean }> => {
-  // 判断是基金还是A股股票
-  const isStock = /^(60|30|688)/.test(code);
-  if (!isStock) {
-    // 基金：原有天天基金接口
+  // 股票正则：60沪市 / 00深市主板 / 30创业板 / 688科创板
+  // const isStockCode = /^(60|00|30|688)/.test(code);
+  const isStockCode = /^(60|30|688)/.test(code);
+  if (!isStockCode) {
+    // 基金接口：天天基金估值 https 接口（UTF-8 无需转码）
     try {
       const res = await Taro.request({
         url: `https://fundgz.1234567.com.cn/js/${code}.js`,
@@ -56,27 +62,28 @@ export const getFundDailyInfo = async (code: string, holdShare: number): Promise
     }
   }
 
-  // ========== 股票走腾讯财经接口 ==========
-  let marketPrefix = code.startsWith('6') ? 'sh' : 'sz';
+  // ========== A股股票：腾讯财经接口（GBK编码，二进制缓冲解码） ==========
+  const marketPrefix = code.startsWith('6') ? 'sh' : 'sz';
   const stockCode = marketPrefix + code;
   try {
     const res = await Taro.request({
       url: `https://qt.gtimg.cn/q=${stockCode}`,
       method: "GET",
-      timeout: 10000
+      timeout: 10000,
+      responseType: 'arraybuffer' // 关键：获取原始二进制，解决GBK乱码
     });
-    const text = res.data as string;
-    // 正则提取引号内行情字符串
+    // GBK二进制转UTF8字符串
+    const text = gbkBufferToUtf8(res.data);
     const match = text.match(/"(.*?)"/);
     if (!match?.[1]) throw new Error('股票无行情');
     const arr = match[1].split('~');
-    const stockName = arr[0];
+    const stockName = arr[1];
     const yesterdayClose = Number(arr[4]); // 昨日收盘价
     const nowPrice = Number(arr[3]); // 当前现价
-    const risePercent = ((nowPrice - yesterdayClose) / yesterdayClose) * 100;
+    const risePercent = Number(arr[32]); // 直接使用接口返回涨跌幅，避免浮点计算误差
     const todayPredictProfit = holdShare * (nowPrice - yesterdayClose);
     const predictDesc = risePercent >= 0 ? "短期看涨" : "短期承压看跌";
-    // 股票无估值时间，用当前时分填充
+    // 格式化更新时间 20260707161431 → 2026-07-07 16:14
     const rawTime = arr[30];
     let updateTime = '';
     if (rawTime && rawTime.length >= 12) {
@@ -114,10 +121,9 @@ export const getFundDailyInfo = async (code: string, holdShare: number): Promise
   }
 };
 
-
 /**
- * 搜索：股票 + 公募基金 混合搜索
- * @param keyword 代码/名称
+ * 混合搜索：公募基金 + A股股票，解决手机真机GBK中文乱码、自动去重
+ * @param keyword 代码/名称搜索词
  */
 export const searchStock = async (keyword: string): Promise<StockItem[]> => {
   try {
@@ -126,14 +132,13 @@ export const searchStock = async (keyword: string): Promise<StockItem[]> => {
     const encodeKey = encodeURIComponent(trimKey);
     const list: StockItem[] = [];
 
-    // 1. 请求东方财富基金搜索接口
+    // 1. 东方财富基金搜索接口（GBK编码，二进制缓冲解码）
     const fundRes = await Taro.request({
       url: `https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeKey}`,
       method: 'GET',
-      timeout: 4000
+      timeout: 4000,
     });
     const resData = fundRes.data;
-    // 判断接口正常且有基金列表
     if (resData.ErrCode === 0 && Array.isArray(resData.Datas)) {
       resData.Datas.forEach((item: any) => {
         const code = item.CODE || '';
@@ -149,23 +154,22 @@ export const searchStock = async (keyword: string): Promise<StockItem[]> => {
       });
     }
 
-    // 2. 原有新浪股票搜索（保留，兼容股票）
+    // 2. 新浪股票搜索接口（GBK编码，二进制缓冲解码）
     const stockRes = await Taro.request({
       url: `https://suggest3.sinajs.cn/suggest/type=11&key=${encodeKey}`,
       method: 'GET',
-      timeout: 4000
+      timeout: 4000,
+      responseType: 'arraybuffer'
     });
-    const text = stockRes.data as string;
-    const recordArr = text.split(';').filter(item => item.trim());
+    const stockText = gbkBufferToUtf8(stockRes.data);
+    const recordArr = stockText.split(';').filter(item => item.trim());
     for (const record of recordArr) {
       const fields = record.split(',');
-      console.log(fields[9])
-      console.log(fields);
       const code = fields[2] || '';
       const name = fields[4] || '';
       const tag = '股票';
       if (!code || !name) continue;
-      // 去重：基金已存在则不重复添加
+      // 去重：避免基金、股票代码重复
       const isExist = list.some(i => i.code === code);
       if (!isExist) {
         list.push({ code, name, tag, holdShare: 0 });
