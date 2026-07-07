@@ -8,55 +8,108 @@ import { StockDailyData, StockItem } from '../types/stock';
  * 接口返回示例：jsonpgz({"fundcode":"010595","name":"广发成长精选混合A","jzrq":"2026-06-30","dwjz":"0.7134","gsz":"0.7214","gszzl":"1.13","gztime":"2026-07-01 15:00"});
  */
 export const getFundDailyInfo = async (code: string, holdShare: number): Promise<StockDailyData & { loadError: boolean }> => {
+  // 判断是基金还是A股股票
+  const isStock = /^(60|30|688)/.test(code);
+  if (!isStock) {
+    // 基金：原有天天基金接口
+    try {
+      const res = await Taro.request({
+        url: `https://fundgz.1234567.com.cn/js/${code}.js`,
+        method: "GET",
+        timeout: 10000
+      });
+      const text = res.data as string;
+      const matchResult = text.match(/jsonpgz\((.*?)\);/);
+      if (!matchResult?.[1]) throw new Error('无估值数据');
+      const jsonStr = matchResult[1];
+      const data = JSON.parse(jsonStr);
+      const risePercent = Number(data.gszzl || 0);
+      const nowNet = Number(data.gsz || 0);
+      const lastNet = Number(data.dwjz || 0);
+      const todayPredictProfit = holdShare * (nowNet - lastNet);
+      const predictDesc = risePercent >= 0 ? "短期看涨" : "短期承压看跌";
+      const updateTime = data.gztime || '';
+      return {
+        code: data.fundcode,
+        name: data.name,
+        nowPrice: nowNet,
+        yesterdayClose: lastNet,
+        risePercent: risePercent,
+        todayPredictProfit,
+        predictDesc,
+        updateTime,
+        loadError: false
+      };
+    } catch (err) {
+      console.error('基金行情请求失败：', err);
+      return {
+        code,
+        name: "未知基金",
+        nowPrice: 0,
+        yesterdayClose: 0,
+        risePercent: 0,
+        todayPredictProfit: 0,
+        predictDesc: "暂无估值数据，点击刷新重试",
+        updateTime: '',
+        loadError: true
+      };
+    }
+  }
+
+  // ========== 股票走腾讯财经接口 ==========
+  let marketPrefix = code.startsWith('6') ? 'sh' : 'sz';
+  const stockCode = marketPrefix + code;
   try {
     const res = await Taro.request({
-      url: `https://fundgz.1234567.com.cn/js/${code}.js`,
+      url: `https://qt.gtimg.cn/q=${stockCode}`,
       method: "GET",
       timeout: 10000
     });
     const text = res.data as string;
-    // 正则提取 jsonpgz(xxx) 内部JSON
-    const matchResult = text.match(/jsonpgz\((.*?)\);/);
-    if (!matchResult?.[1]) {
-      throw new Error('无估值数据');
-    }
-    const jsonStr = matchResult[1];
-    const data = JSON.parse(jsonStr);
-
-    // 安全转数字，空值兜底0
-    const risePercent = Number(data.gszzl || 0);
-    const nowNet = Number(data.gsz || 0);
-    const lastNet = Number(data.dwjz || 0);
-    // 当日预测盈亏 = 份额 * (实时估值 - 昨日净值)
-    const todayPredictProfit = holdShare * (nowNet - lastNet);
+    // 正则提取引号内行情字符串
+    const match = text.match(/"(.*?)"/);
+    if (!match?.[1]) throw new Error('股票无行情');
+    const arr = match[1].split('~');
+    const stockName = arr[0];
+    const yesterdayClose = Number(arr[4]); // 昨日收盘价
+    const nowPrice = Number(arr[3]); // 当前现价
+    const risePercent = ((nowPrice - yesterdayClose) / yesterdayClose) * 100;
+    const todayPredictProfit = holdShare * (nowPrice - yesterdayClose);
     const predictDesc = risePercent >= 0 ? "短期看涨" : "短期承压看跌";
-    // 提取估值更新时间 gztime
-    const updateTime = data.gztime || '';
-
-    return {
-      code: data.fundcode,
-      name: data.name,
-      nowPrice: nowNet,
-      yesterdayClose: lastNet,
-      risePercent: risePercent,
-      todayPredictProfit,
-      predictDesc,
-      updateTime, // 新增估值更新时间
-      loadError: false // 请求成功标记
-    };
-  } catch (err) {
-    console.error('基金行情请求失败：', err);
-    // 异常返回完整结构，带上错误标记，updateTime兜底空字符串
+    // 股票无估值时间，用当前时分填充
+    const rawTime = arr[30];
+    let updateTime = '';
+    if (rawTime && rawTime.length >= 12) {
+      const year = rawTime.slice(0, 4);
+      const month = rawTime.slice(4, 6);
+      const day = rawTime.slice(6, 8);
+      const hour = rawTime.slice(8, 10);
+      const minute = rawTime.slice(10, 12);
+      updateTime = `${year}-${month}-${day} ${hour}:${minute}`;
+    }
     return {
       code,
-      name: "未知基金",
+      name: stockName,
+      nowPrice,
+      yesterdayClose,
+      risePercent: Number(risePercent.toFixed(2)),
+      todayPredictProfit: Number(todayPredictProfit.toFixed(2)),
+      predictDesc,
+      updateTime,
+      loadError: false
+    };
+  } catch (err) {
+    console.error('股票行情请求失败：', err);
+    return {
+      code,
+      name: "未知股票",
       nowPrice: 0,
       yesterdayClose: 0,
       risePercent: 0,
       todayPredictProfit: 0,
-      predictDesc: "暂无估值数据，下拉刷新重试",
-      updateTime: '', // 异常兜底空
-      loadError: true // 页面识别异常卡片
+      predictDesc: "暂无行情数据，点击刷新重试",
+      updateTime: '',
+      loadError: true
     };
   }
 };

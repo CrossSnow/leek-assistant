@@ -21,16 +21,23 @@ const Index = () => {
   // 手动刷新loading
   const [refreshLoading, setRefreshLoading] = useState(false);
 
+   // 计算一组持仓总盈亏（过滤掉加载失败标的）
+  const calcTotalProfit = (list: StockCombine[]) => {
+    return list.reduce((sum, item) => {
+      if (item.loadError) return sum;
+      return sum + item.todayPredictProfit;
+    }, 0);
+  };
+
   const filterList = stockDataList.filter(item => {
     if (activeFilter === 'all') return true;
-    return item.tag === activeFilter;
+    if (activeFilter === '基金') return item.tag === '基金';
+    // 选中股票分类时，展示所有非基金标的
+    return item.tag !== '基金';
   });
 
   // 计算当前筛选列表当日总盈亏（只算无加载错误的数据）
-  const totalTodayProfit = filterList.reduce((sum, item) => {
-    if (item.loadError) return sum;
-    return sum + item.todayPredictProfit;
-  }, 0);
+  const totalTodayProfit = calcTotalProfit(filterList);
 
   // 加载数据（纯数据逻辑）
   const fetchAllStockInfoData = async () => {
@@ -48,12 +55,9 @@ const Index = () => {
     const allResult = await Promise.all(promiseList);
     setStockDataList(allResult);
 
-    // 全部请求完成后再计算总和并保存
-    const sum = allResult.reduce((s, item) => {
-      if (item.loadError) return s;
-      return s + item.todayPredictProfit;
-    }, 0);
-    saveTodayProfit(sum);
+     // 存入历史：全部持仓总盈亏，调用公共方法
+    const allTotal = calcTotalProfit(allResult);
+    saveTodayProfit(allTotal);
   };
 
   // 手动点击刷新按钮
