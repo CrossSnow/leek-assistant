@@ -39,26 +39,36 @@ const Index = () => {
   // 计算当前筛选列表当日总盈亏（只算无加载错误的数据）
   const totalTodayProfit = calcTotalProfit(filterList);
 
-  // 加载数据（纯数据逻辑）
-  const fetchAllStockInfoData = async () => {
-    const collectList = getCollectList();
-    if (collectList.length === 0) {
-      setStockDataList([]);
-      // 无持仓，当日收益存0
-      saveTodayProfit(0);
-      return;
-    }
-    const promiseList = collectList.map(async (item) => {
-      const data = await getFundDailyInfo(item.code, item.holdShare);
-      return { ...item, ...data, name: item.name };
+  // 分批加载行情，控制并发5个，解决批量并发超时
+const fetchAllByBatch = async (list: StockItem[], batchSize = 5) => {
+  const result: StockCombine[] = [];
+  for (let i = 0; i < list.length; i += batchSize) {
+    const batch = list.slice(i, i + batchSize);
+    const batchData = await Promise.all(batch.map(item => getFundDailyInfo(item.code, item.holdShare)));
+    batch.forEach((item, idx) => {
+      result.push({ ...item, ...batchData[idx] });
     });
-    const allResult = await Promise.all(promiseList);
-    setStockDataList(allResult);
+  }
+  return result;
+};
 
-     // 存入历史：全部持仓总盈亏，调用公共方法
-    const allTotal = calcTotalProfit(allResult);
-    saveTodayProfit(allTotal);
-  };
+// 加载数据（纯数据逻辑）
+const fetchAllStockInfoData = async () => {
+  const collectList = getCollectList();
+  if (collectList.length === 0) {
+    setStockDataList([]);
+    saveTodayProfit(0);
+    return;
+  }
+  // 分批请求替代一次性Promise.all，根治批量并发超时
+  const allResult = await fetchAllByBatch(collectList, 5);
+  setStockDataList(allResult);
+  const sum = allResult.reduce((s, item) => {
+    if (item.loadError) return s;
+    return s + item.todayPredictProfit;
+  }, 0);
+  saveTodayProfit(sum);
+};
 
   // 手动点击刷新按钮
   const handleManualRefresh = async () => {

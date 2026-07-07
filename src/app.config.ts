@@ -24,5 +24,10 @@ export default defineAppConfig({
         text: '我的'
       }
     ]
+  },
+  networkTimeout: {
+    "request": 15000,
+    "uploadFile": 15000,
+    "downloadFile": 15000
   }
 })
