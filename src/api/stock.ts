@@ -10,7 +10,7 @@ import { StockDailyData, StockItem } from '../types/stock';
 export const getFundDailyInfo = async (code: string, holdShare: number): Promise<StockDailyData & { loadError: boolean }> => {
   try {
     const res = await Taro.request({
-      url: `http://fundgz.1234567.com.cn/js/${code}.js`,
+      url: `https://fundgz.1234567.com.cn/js/${code}.js`,
       method: "GET",
       timeout: 10000
     });
@@ -75,7 +75,7 @@ export const searchStock = async (keyword: string): Promise<StockItem[]> => {
 
     // 1. 请求东方财富基金搜索接口
     const fundRes = await Taro.request({
-      url: `http://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeKey}`,
+      url: `https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeKey}`,
       method: 'GET',
       timeout: 4000
     });
@@ -98,7 +98,7 @@ export const searchStock = async (keyword: string): Promise<StockItem[]> => {
 
     // 2. 原有新浪股票搜索（保留，兼容股票）
     const stockRes = await Taro.request({
-      url: `http://suggest3.sinajs.cn/suggest/type=11&key=${encodeKey}`,
+      url: `https://suggest3.sinajs.cn/suggest/type=11&key=${encodeKey}`,
       method: 'GET',
       timeout: 4000
     });

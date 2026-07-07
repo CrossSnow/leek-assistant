@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, ScrollView, Input, Button } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
-import { getCollectList, delCollect, addCollect } from '../../utils/storage';
+import { getCollectList, delCollect, addCollect, saveTodayProfit } from '../../utils/storage';
 import { getFundDailyInfo } from '../../api/stock';
 import { formatPercent, formatProfit, getRiseClass } from '../../utils/format';
 import { StockDailyData, StockItem } from '../../types/stock';
@@ -37,6 +37,8 @@ const Index = () => {
     const collectList = getCollectList();
     if (collectList.length === 0) {
       setStockDataList([]);
+      // 无持仓，当日收益存0
+      saveTodayProfit(0);
       return;
     }
     const promiseList = collectList.map(async (item) => {
@@ -45,6 +47,13 @@ const Index = () => {
     });
     const allResult = await Promise.all(promiseList);
     setStockDataList(allResult);
+
+    // 全部请求完成后再计算总和并保存
+    const sum = allResult.reduce((s, item) => {
+      if (item.loadError) return s;
+      return s + item.todayPredictProfit;
+    }, 0);
+    saveTodayProfit(sum);
   };
 
   // 手动点击刷新按钮
@@ -103,7 +112,7 @@ const Index = () => {
       Taro.showToast({ title: '请输入正整数份额', icon: 'none' });
       return;
     }
-    addCollect({ code: editFund.code, name: editFund.name, holdShare: share });
+    addCollect({ code: editFund.code, name: editFund.name, holdShare: share, tag: editFund.tag });
     setShowEditModal(false);
     Taro.showToast({ title: '份额修改成功' });
     fetchAllStockInfoData();
