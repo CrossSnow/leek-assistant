@@ -1,5 +1,6 @@
 import Taro from '@tarojs/taro';
 import { StockDailyData, StockItem } from '../types/stock';
+import { getCollectList } from '../utils/storage';
 
 /**
  * 获取单只基金/股票实时行情，计算当日预测盈亏
@@ -7,19 +8,16 @@ import { StockDailyData, StockItem } from '../types/stock';
  * @param holdShare 用户持有份额
  */
 export const getFundDailyInfo = async (code: string, holdShare: number): Promise<StockDailyData & { loadError: boolean }> => {
-  // 股票正则：60沪市 / 00深市主板 / 30创业板 / 688科创板
-  const isStockCode = /^(60|30|688)/.test(code);
-  if (!isStockCode) {
-    // 基金接口：天天基金估值 UTF-8 无需转码
-    try {
-      const res = await Taro.request({
-        url: `https://fundgz.1234567.com.cn/js/${code}.js`,
-        method: "GET",
-        timeout: 15000 // 全局统一拉长至15秒
-      });
-      const text = res.data as string;
-      const matchResult = text.match(/jsonpgz\((.*?)\);/);
-      if (!matchResult?.[1]) throw new Error('无估值数据');
+  // 第一步：优先尝试天天基金估值接口（场外基金UTF8无乱码）
+  try {
+    const res = await Taro.request({
+      url: `https://fundgz.1234567.com.cn/js/${code}.js`,
+      method: "GET",
+      timeout: 15000
+    });
+    const text = res.data as string;
+    const matchResult = text.match(/jsonpgz\((.*?)\);/);
+    if (matchResult?.[1]) {
       const jsonStr = matchResult[1];
       const data = JSON.parse(jsonStr);
       const risePercent = Number(data.gszzl || 0);
@@ -39,52 +37,48 @@ export const getFundDailyInfo = async (code: string, holdShare: number): Promise
         updateTime,
         loadError: false
       };
-    } catch (err) {
-      console.error('基金行情请求失败：', err);
-      return {
-        code,
-        name: "未知基金",
-        nowPrice: 0,
-        yesterdayClose: 0,
-        risePercent: 0,
-        todayPredictProfit: 0,
-        predictDesc: "暂无估值数据，点击刷新重试",
-        updateTime: '',
-        loadError: true
-      };
     }
+  } catch (err) {
+    console.log('天天基金无数据，切换新浪行情接口', code, err);
   }
 
-  // ========== A股股票：腾讯财经接口 移除arraybuffer降低线上负载 ==========
-  const marketPrefix = code.startsWith('6') ? 'sh' : 'sz';
-  const stockCode = marketPrefix + code;
+  // ========== 降级：新浪 hq.sinajs.cn 行情接口 ==========
+  const marketPrefix = code.startsWith('6') || code.startsWith('5') ? 'sh' : 'sz';
+  const stockUrl = `https://hq.sinajs.cn/list=${marketPrefix}${code}`;
   try {
     const res = await Taro.request({
-      url: `https://qt.gtimg.cn/q=${stockCode}`,
+      url: stockUrl,
       method: "GET",
-      timeout: 15000
+      timeout: 15000,
+      header: {
+        Referer: "https://finance.sina.com.cn/" // 必须加Referer防拦截
+      }
     });
-    const text = res.data as string;
-    const match = text.match(/"(.*?)"/);
-    if (!match?.[1]) throw new Error('股票无行情');
-    const arr = match[1].split('~');
-    const stockName = arr[1];
-    const yesterdayClose = Number(arr[4]); // 昨日收盘价
-    const nowPrice = Number(arr[3]); // 当前现价
-    const risePercent = Number(arr[32]); // 直接使用接口返回涨跌幅
+    const rawText = res.data as string;
+    // 提取引号内核心数据
+    const quoteMatch = rawText.match(/"(.*?)"/);
+    if (!quoteMatch || !quoteMatch[1]) throw new Error('无行情数据');
+    const fields = quoteMatch[1].split(',');
+
+    // 核心数值
+    const rawName = fields[0] || '';
+    const yesterdayClose = Number(fields[2]);
+    const nowPrice = Number(fields[3]);
+    // 手动计算涨跌幅
+    const risePercent = yesterdayClose === 0 ? 0 : ((nowPrice - yesterdayClose) / yesterdayClose) * 100;
     const todayPredictProfit = holdShare * (nowPrice - yesterdayClose);
     const predictDesc = risePercent >= 0 ? "短期看涨" : "短期承压看跌";
-    // 格式化更新时间 20260707161431 → 2026-07-07 16:14
-    const rawTime = arr[30];
-    let updateTime = '';
-    if (rawTime && rawTime.length >= 12) {
-      const year = rawTime.slice(0, 4);
-      const month = rawTime.slice(4, 6);
-      const day = rawTime.slice(6, 8);
-      const hour = rawTime.slice(8, 10);
-      const minute = rawTime.slice(10, 12);
-      updateTime = `${year}-${month}-${day} ${hour}:${minute}`;
-    }
+
+    // 时间格式化
+    const dateStr = fields[30] || '';
+    const timeStr = fields[31] || '';
+    let updateTime = `${dateStr} ${timeStr}`;
+
+    // 关键：优先读取本地自选缓存里正常中文名称，彻底解决GBK乱码
+    const collectList = getCollectList();
+    const localItem = collectList.find(item => item.code === code);
+    const stockName = localItem?.name || rawName;
+
     return {
       code,
       name: stockName,
@@ -97,10 +91,10 @@ export const getFundDailyInfo = async (code: string, holdShare: number): Promise
       loadError: false
     };
   } catch (err) {
-    console.error('股票行情请求失败：', err);
+    console.error('双接口全部请求失败', err);
     return {
       code,
-      name: "未知股票",
+      name: "未知标的",
       nowPrice: 0,
       yesterdayClose: 0,
       risePercent: 0,
@@ -113,9 +107,7 @@ export const getFundDailyInfo = async (code: string, holdShare: number): Promise
 };
 
 /**
- * 混合搜索：公募基金 + A股股票
- * 优化点：1.串行请求 2.超时15秒 3.移除arraybuffer 4.失败自动重试1次兜底
- * @param keyword 代码/名称搜索词
+ * 混合搜索：公募基金 + A股股票（无内存缓存）
  */
 export const searchStock = async (keyword: string): Promise<StockItem[]> => {
   const trimKey = keyword.trim();
@@ -123,9 +115,8 @@ export const searchStock = async (keyword: string): Promise<StockItem[]> => {
   const encodeKey = encodeURIComponent(trimKey);
   const list: StockItem[] = [];
   let retry = 0;
-  const MAX_RETRY = 1; // 超时自动重试1次
+  const MAX_RETRY = 1;
 
-  // 封装单次请求逻辑
   const requestFund = async () => {
     return Taro.request({
       url: `https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeKey}`,
@@ -142,12 +133,10 @@ export const searchStock = async (keyword: string): Promise<StockItem[]> => {
   };
 
   try {
-    // 优化核心：串行执行，不并发抢占网络，杜绝排队超时
     let fundRes;
     try {
       fundRes = await requestFund();
     } catch (e) {
-      // 超时重试一次
       if (retry < MAX_RETRY) {
         retry++;
         fundRes = await requestFund();
@@ -164,7 +153,6 @@ export const searchStock = async (keyword: string): Promise<StockItem[]> => {
       });
     }
 
-    // 串行执行股票搜索，等基金请求完成再发起
     let stockRes;
     retry = 0;
     try {
